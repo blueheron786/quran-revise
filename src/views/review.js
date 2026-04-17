@@ -1,5 +1,5 @@
 import { loadState, saveState, todayStr } from '../lib/storage.js';
-import { calcQuota, getSessionQueue, scheduleReview } from '../lib/srs.js';
+import { buildSessionQueue, scheduleReview } from '../lib/srs.js';
 import { getPage } from '../lib/quran.js';
 import { navigate } from '../router.js';
 
@@ -7,8 +7,7 @@ export function renderReview(container) {
   const state = loadState();
   if (!state) { navigate('/onboarding'); return; }
 
-  const quota = calcQuota(Object.keys(state.pages).length);
-  const queue = getSessionQueue(state.pages, quota);
+  const queue = buildSessionQueue(state);
 
   if (queue.length === 0) {
     container.innerHTML = `
@@ -66,8 +65,24 @@ export function renderReview(container) {
       return;
     }
 
-    const pageData = queue[currentIdx];
-    const info = getPage(pageData.num);
+    const item = queue[currentIdx];
+    const isSurah = item.type === 'surah';
+
+    // For page items, look up the page-index entry for meta info
+    const pageInfo = isSurah ? null : getPage(item.num);
+    const firstWords = isSurah ? item.firstWords : (pageInfo?.firstWords ?? '');
+
+    const badgeHTML = isSurah
+      ? `<div class="surah-badge">${item.surahName}</div>`
+      : `<div class="page-badge">Page ${item.num}</div>`;
+
+    const metaHTML = isSurah
+      ? `<div class="page-meta">Pages ${item.pageNums[0]}${item.pageNums.length > 1 ? '–' + item.pageNums[item.pageNums.length - 1] : ''} · Juz ${item.juz}</div>`
+      : `<div class="page-meta">${pageInfo ? `${pageInfo.surahName} · Ayah ${pageInfo.ayahNum}` : ''}</div>`;
+
+    const hintText = isSurah
+      ? 'Recite this surah from memory, then reveal the opening words to check yourself.'
+      : 'Recite this page from memory, then reveal the opening words to check yourself.';
 
     container.innerHTML = `
       <div class="review">
@@ -79,18 +94,16 @@ export function renderReview(container) {
         </div>
 
         <div class="review-card card">
-          <div class="page-badge">Page ${pageData.num}</div>
-          <div class="page-meta">
-            ${info ? `${info.surahName} · Ayah ${info.ayahNum}` : ''}
-          </div>
+          ${badgeHTML}
+          ${metaHTML}
 
-          <div class="hint-area" id="hint-area">
-            <p class="hint-instruction">Recite this page from memory, then reveal the opening words to check yourself.</p>
+          <div class="hint-area">
+            <p class="hint-instruction">${hintText}</p>
             <button class="btn-hint" id="show-hint">Show opening words</button>
+            <div class="arabic-text" id="arabic-text" dir="rtl" lang="ar" hidden>${firstWords}</div>
           </div>
 
-          <div class="rating-area" id="rating-area" hidden>
-            <div class="arabic-text" dir="rtl" lang="ar">${info?.firstWords ?? ''}</div>
+          <div class="rating-area">
             <p class="rating-prompt">How did it go?</p>
             <div class="rating-buttons">
               <button class="btn-rating btn-easy" data-rating="easy">
@@ -114,8 +127,8 @@ export function renderReview(container) {
     `;
 
     container.querySelector('#show-hint').addEventListener('click', () => {
-      container.querySelector('#hint-area').hidden = true;
-      container.querySelector('#rating-area').hidden = false;
+      container.querySelector('#arabic-text').hidden = false;
+      container.querySelector('#show-hint').hidden = true;
     });
 
     container.querySelectorAll('.btn-rating').forEach(btn => {
@@ -123,10 +136,13 @@ export function renderReview(container) {
         const rating = btn.dataset.rating;
         sessionResults[rating] = (sessionResults[rating] || 0) + 1;
 
-        // Persist updated schedule for this page
+        // Persist updated schedule — apply rating to all pages in this item
         const s = loadState();
-        const key = String(pageData.num);
-        s.pages[key] = scheduleReview(s.pages[key], rating);
+        const pageNums = isSurah ? item.pageNums : [item.num];
+        for (const pageNum of pageNums) {
+          const key = String(pageNum);
+          if (s.pages[key]) s.pages[key] = scheduleReview(s.pages[key], rating);
+        }
         saveState(s);
 
         currentIdx++;
@@ -147,7 +163,7 @@ export function renderReview(container) {
         <div class="complete-card card">
           <div class="complete-icon" aria-hidden="true">✓</div>
           <h2>Session complete!</h2>
-          <p>You reviewed <strong>${total}</strong> page${total !== 1 ? 's' : ''}</p>
+          <p>You reviewed <strong>${total}</strong> item${total !== 1 ? 's' : ''}</p>
           <div class="session-breakdown">
             <span class="rating-pill easy">${sessionResults.easy} easy</span>
             <span class="rating-pill hard">${sessionResults.hard} hard</span>
@@ -162,3 +178,4 @@ export function renderReview(container) {
 
   renderCard();
 }
+

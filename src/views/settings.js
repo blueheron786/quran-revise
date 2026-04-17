@@ -40,18 +40,42 @@ function renderPanel(container, juzNum, isManage) {
       const isSurah = panelMode === 'surah';
       const selectorHTML = isSurah
         ? surahGroups.map(g => {
+            if (g.pages.length === 1) {
+              const checked = panelChecked.has(g.pages[0]);
+              const rec = state.pages[String(g.pages[0])];
+              const isReviewed = rec && rec.reviewCount > 0;
+              return `
+                <label class="selector-row">
+                  <input type="checkbox" class="item-check" data-pages="${g.pages[0]}" ${checked ? 'checked' : ''}>
+                  <div class="selector-info">
+                    <span class="selector-name">${g.surahName}</span>
+                    <span class="selector-sub">p. ${g.pages[0]}${isReviewed ? ' ·' : ''}</span>
+                  </div>
+                </label>`;
+            }
             const allChecked = g.pages.every(p => panelChecked.has(p));
-            const pageRange = g.pages.length > 1
-              ? `pp. ${g.pages[0]}–${g.pages[g.pages.length - 1]}`
-              : `p. ${g.pages[0]}`;
+            const pageRange = `pp. ${g.pages[0]}–${g.pages[g.pages.length - 1]}`;
+            const pagesHtml = g.pages.map(p => {
+              const rec = state.pages[String(p)];
+              const isReviewed = rec && rec.reviewCount > 0;
+              return `
+                <label class="page-check-label">
+                  <input type="checkbox" class="item-check" data-pages="${p}" ${panelChecked.has(p) ? 'checked' : ''}>
+                  <span class="page-check-num">${p}</span>
+                  ${isReviewed ? '<span class="page-reviewed-dot" title="Already reviewed"></span>' : ''}
+                </label>`;
+            }).join('');
             return `
-              <label class="selector-row">
-                <input type="checkbox" class="item-check" data-pages="${g.pages.join(',')}" ${allChecked ? 'checked' : ''}>
-                <div class="selector-info">
-                  <span class="selector-name">${g.surahName}</span>
-                  <span class="selector-sub">${pageRange}</span>
-                </div>
-              </label>`;
+              <div class="surah-group">
+                <label class="selector-row surah-group-header">
+                  <input type="checkbox" class="item-check surah-group-check" data-pages="${g.pages.join(',')}" ${allChecked ? 'checked' : ''}>
+                  <div class="selector-info">
+                    <span class="selector-name">${g.surahName}</span>
+                    <span class="selector-sub">${pageRange}</span>
+                  </div>
+                </label>
+                <div class="surah-page-grid">${pagesHtml}</div>
+              </div>`;
           }).join('')
         : allPages.map(p => {
             const checked = panelChecked.has(p);
@@ -109,6 +133,11 @@ function renderPanel(container, juzNum, isManage) {
       if (selectAllEl && checkedPageCount > 0 && checkedPageCount < allPages.length) {
         selectAllEl.indeterminate = true;
       }
+      container.querySelectorAll('.surah-group-check').forEach(cb => {
+        const pages = cb.dataset.pages.split(',').map(Number);
+        const numChecked = pages.filter(p => panelChecked.has(p)).length;
+        if (numChecked > 0 && numChecked < pages.length) cb.indeterminate = true;
+      });
 
       container.querySelector('#panel-back').addEventListener('click', () => {
         renderSettings(container);
